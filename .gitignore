@@ -1,0 +1,42 @@
+# OS/editor noise
+.DS_Store
+._*
+.idea/
+.vscode/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# Local secrets/config
+.env
+.env.*
+
+# Large local datasets and generated image exports
+dataset-feeling-success/
+dataset-limited/
+feeling-of-success/
+*.h5
+*.hdf5
+
+# Model weights, training outputs, and experiment artifacts
+checkpoints/
+runs/
+outputs/
+wandb/
+lightning_logs/
+*.ckpt
+*.pth
+*.pt
+*.safetensors
+events.out.tfevents.*
+
+# Sparsh is tracked as a Git submodule at ./sparsh.
