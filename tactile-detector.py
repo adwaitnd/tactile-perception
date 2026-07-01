@@ -44,6 +44,7 @@ except ModuleNotFoundError:
 REPO_ROOT = Path(__file__).resolve().parent
 SPARSH_ROOT = REPO_ROOT / "sparsh"
 SPARSH_GRASP_RESIZE_HW = (320, 240)
+DEFAULT_SEED = 42
 
 SensorName = Literal["gelsightA", "gelsightB"]
 SensorPolicy = Literal["random", "gelsightA", "gelsightB", "both"]
@@ -59,12 +60,27 @@ class TactileSample:
     label: int
 
 
-def seed_everything(seed: int = 42) -> None:
+def seed_everything(seed: int = DEFAULT_SEED) -> None:
     random.seed(seed)
     np.random.seed(seed)
     if torch is not None:
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
+        if torch.backends.cudnn.is_available():
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
+
+def seed_worker(_worker_id: int) -> None:
+    worker_seed = torch.initial_seed() % 2**32
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
+def build_torch_generator(seed: int) -> Any:
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    return generator
 
 
 def require_torch() -> None:
@@ -330,6 +346,7 @@ def build_dataloader(
     shuffle: Optional[bool] = None,
     max_samples: Optional[int] = None,
     pin_memory: bool = False,
+    seed: int = DEFAULT_SEED,
 ) -> DataLoader:
     require_torch()
     dataset = build_dataset(dataset_root, split, csv_path, sensor_policy, pair_mode, max_samples)
@@ -342,6 +359,8 @@ def build_dataloader(
         num_workers=num_workers,
         pin_memory=pin_memory,
         collate_fn=collate_keep_metadata,
+        worker_init_fn=seed_worker,
+        generator=build_torch_generator(seed),
     )
 
 
@@ -825,7 +844,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--explain-sparsh", action="store_true", help="Print answers about Sparsh tactile handling.")
     parser.add_argument("--prediction-output", type=Path, default=REPO_ROOT / "tactile-predictions.csv")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     return parser.parse_args()
 
 
@@ -859,6 +878,7 @@ def main() -> None:
             shuffle=training_requested,
             max_samples=max_train_samples if training_requested else None,
             pin_memory=device.type == "cuda",
+            seed=args.seed,
         )
         batch = next(iter(dataloader))
         describe_batch(batch)
@@ -892,6 +912,7 @@ def main() -> None:
                 shuffle=False,
                 max_samples=None,
                 pin_memory=device.type == "cuda",
+                seed=args.seed,
             )
         writer, run_dir = build_summary_writer(args.tensorboard_logdir, args.run_name, args)
         checkpoint_dir = args.checkpoint_dir or (run_dir / "checkpoints")
