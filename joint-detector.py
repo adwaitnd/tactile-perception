@@ -573,9 +573,9 @@ def train_head(
                 f"eval step={step} loss={eval_metrics['loss']:.4f} "
                 f"acc={eval_metrics['accuracy']:.3f}"
             )
-        if writer is not None:
-            writer.add_scalar("eval/loss", eval_metrics["loss"], step)
-            writer.add_scalar("eval/accuracy", eval_metrics["accuracy"], step)
+            if writer is not None:
+                writer.add_scalar("eval/loss", eval_metrics["loss"], step)
+                writer.add_scalar("eval/accuracy", eval_metrics["accuracy"], step)
         if checkpoint_dir is not None:
             should_save_latest = (
                 step == 1
