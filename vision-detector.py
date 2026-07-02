@@ -154,6 +154,27 @@ def load_rgb_image(path: Path) -> Image.Image:
     return Image.open(path).convert("RGB")
 
 
+def crop_rgb_to_motion_box(image: Image.Image, metadata: Dict[str, Any], sample_id: str) -> Image.Image:
+    try:
+        box = metadata["rgb_motion_diff"]["box_xyxy"]
+    except KeyError as exc:
+        raise KeyError(
+            f"Sample {sample_id} metadata is missing rgb_motion_diff.box_xyxy; "
+            "run scripts/add_rgb_motion_diff_metadata.py before training vision models."
+        ) from exc
+
+    if not isinstance(box, list) or len(box) != 4:
+        raise ValueError(f"Sample {sample_id} has invalid rgb_motion_diff.box_xyxy={box!r}")
+
+    width, height = image.size
+    x1, y1, x2, y2 = [int(round(value)) for value in box]
+    x1 = max(0, min(x1, width - 1))
+    y1 = max(0, min(y1, height - 1))
+    x2 = max(x1 + 1, min(x2, width))
+    y2 = max(y1 + 1, min(y2, height))
+    return image.crop((x1, y1, x2, y2))
+
+
 def resolve_rgb_frame(rgb_dir: Path, phase: str) -> Path:
     path = rgb_dir / f"{phase}.png"
     if not path.exists():
@@ -170,8 +191,9 @@ def build_rgb_transform(model_name: str):
 
     model = timm.create_model(model_name, pretrained=False)
     data_config = resolve_model_data_config(model)
+    data_config["crop_pct"] = 1.0
     print(
-        "RGB transform: "
+        "RGB transform after rgb_motion_diff crop: "
         f"resize/crop strategy={data_config.get('crop_mode')} "
         f"input_size={data_config.get('input_size')} "
         f"crop_pct={data_config.get('crop_pct')} "
@@ -218,8 +240,21 @@ class FeelingSuccessVisionDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         sample = self.samples[idx]
-        during = self.transform(load_rgb_image(resolve_rgb_frame(sample.rgb_dir, "during")))
-        before = self.transform(load_rgb_image(resolve_rgb_frame(sample.rgb_dir, "before")))
+        metadata = self._read_metadata(sample)
+        during = self.transform(
+            crop_rgb_to_motion_box(
+                load_rgb_image(resolve_rgb_frame(sample.rgb_dir, "during")),
+                metadata,
+                sample.sample_dir.name,
+            )
+        )
+        before = self.transform(
+            crop_rgb_to_motion_box(
+                load_rgb_image(resolve_rgb_frame(sample.rgb_dir, "before")),
+                metadata,
+                sample.sample_dir.name,
+            )
+        )
 
         output: Dict[str, Any] = {
             "during_image": during,
@@ -232,7 +267,7 @@ class FeelingSuccessVisionDataset(Dataset):
             "metadata_path": str(self.dataset_root / sample.row["metadata_path"]),
         }
         if self.include_metadata:
-            output["metadata"] = self._read_metadata(sample)
+            output["metadata"] = metadata
         return output
 
     def _read_metadata(self, sample: VisionSample) -> Dict[str, Any]:
