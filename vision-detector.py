@@ -107,8 +107,9 @@ def resolve_device(device: str = "auto") -> Any:
 
 
 def move_batch_to_device(batch: Dict[str, Any], device: Any) -> Dict[str, Any]:
+    non_blocking = getattr(device, "type", None) == "cuda"
     return {
-        key: value.to(device) if torch.is_tensor(value) else value
+        key: value.to(device, non_blocking=non_blocking) if torch.is_tensor(value) else value
         for key, value in batch.items()
     }
 
@@ -287,6 +288,10 @@ def build_dataloader(
     dataset = build_dataset(dataset_root, split, csv_path, pair_mode, model_name, max_samples)
     if shuffle is None:
         shuffle = split == "train"
+    loader_kwargs: Dict[str, Any] = {}
+    if pin_memory and num_workers > 0:
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = 2
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -296,6 +301,7 @@ def build_dataloader(
         collate_fn=collate_keep_metadata,
         worker_init_fn=seed_worker,
         generator=build_torch_generator(seed),
+        **loader_kwargs,
     )
 
 
@@ -440,19 +446,25 @@ def train_head(
                 f"eval step={step} loss={eval_metrics['loss']:.4f} "
                 f"acc={eval_metrics['accuracy']:.3f}"
             )
-            if writer is not None:
-                writer.add_scalar("eval/loss", eval_metrics["loss"], step)
-                writer.add_scalar("eval/accuracy", eval_metrics["accuracy"], step)
+        if writer is not None:
+            writer.add_scalar("eval/loss", eval_metrics["loss"], step)
+            writer.add_scalar("eval/accuracy", eval_metrics["accuracy"], step)
         if checkpoint_dir is not None:
-            save_training_checkpoint(
-                detector=detector,
-                optimizer=optimizer,
-                path=checkpoint_dir / "latest.pth",
-                step=step,
-                metrics=metrics,
-                args=args,
-                include_full_model=save_full_checkpoints,
+            should_save_latest = (
+                step == 1
+                or step == steps
+                or (checkpoint_every_steps > 0 and step % checkpoint_every_steps == 0)
             )
+            if should_save_latest:
+                save_training_checkpoint(
+                    detector=detector,
+                    optimizer=optimizer,
+                    path=checkpoint_dir / "latest.pth",
+                    step=step,
+                    metrics=metrics,
+                    args=args,
+                    include_full_model=save_full_checkpoints,
+                )
             if last_loss < best_loss:
                 best_loss = last_loss
                 save_training_checkpoint(
@@ -545,13 +557,29 @@ def save_training_checkpoint(
     checkpoint = {
         "step": step,
         "metrics": metrics,
-        "head_state_dict": detector.head.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
+        "head_state_dict": state_dict_to_cpu(detector.head.state_dict()),
+        "optimizer_state_dict": optimizer_state_dict_to_cpu(optimizer.state_dict()),
         "args": checkpoint_safe_args(args),
     }
     if include_full_model:
-        checkpoint["model_state_dict"] = detector.state_dict()
+        checkpoint["model_state_dict"] = state_dict_to_cpu(detector.state_dict())
     torch.save(checkpoint, path)
+
+
+def state_dict_to_cpu(state_dict: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: value.detach().cpu() if torch.is_tensor(value) and value.is_cuda else value
+        for key, value in state_dict.items()
+    }
+
+
+def optimizer_state_dict_to_cpu(state_dict: Dict[str, Any]) -> Dict[str, Any]:
+    cpu_state = dict(state_dict)
+    cpu_state["state"] = {
+        param_id: state_dict_to_cpu(param_state)
+        for param_id, param_state in state_dict.get("state", {}).items()
+    }
+    return cpu_state
 
 
 def checkpoint_safe_args(args: Optional[argparse.Namespace]) -> Dict[str, Any]:
