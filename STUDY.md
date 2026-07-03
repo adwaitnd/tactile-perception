@@ -104,6 +104,19 @@ The classifier head is:
 
 ## Test Results
 
+We have consistently split up the dataset into training, evaluation and test splits for all detector training. We use object-level splitting so as to not leak any unexpected visual information to the detector. 
+
+Hashes for the split files:
+
+| file | sha256 |
+|---|---|
+| `feeling-of-success/manifest.csv` | `f61ab4dcd4a4536822d9699a418ea6d4a5a9016d66df89bf8163ecae12592ca3` |
+| `feeling-of-success/train.csv` | `fff2351c634696781977e7f14fe218ddc5910ae998fe1cf4ad52867cbc223fc9` |
+| `feeling-of-success/eval.csv` | `886846932990fc500b2735c928132c3f93466ce13deaaf8c38cd3df6bd2cec99` |
+| `feeling-of-success/test.csv` | `ef8bdbd72beb872b8617974bf3a305007ee465c29d80c4d816fffb802e729c92` |
+
+Results:
+
 | subset | detector | n | accuracy | macro F1 | AUROC |
 |---|---:|---:|---:|---:|---:|
 | all | vision | 1185 | 0.7477 | 0.6731 | 0.6892 |
