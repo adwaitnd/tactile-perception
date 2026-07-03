@@ -1,14 +1,60 @@
 # Study: The value of tactile sensors in grasp prediction
 
-## Step 1: Dataset and preprocessing
+## Dataset
 
-Primary Dataset from [Feeling of Success](https://sites.google.com/view/the-feeling-of-success). Data archive is [h5.zip](https://opara.zih.tu-dresden.de/bitstreams/4ef8383c-bcae-4bf6-9bcd-1242488624b5/download) 
+Primary Dataset from [Feeling of Success](https://sites.google.com/view/the-feeling-of-success). Data archive to download is [h5.zip](https://opara.zih.tu-dresden.de/bitstreams/4ef8383c-bcae-4bf6-9bcd-1242488624b5/download) 
 
-Sparsh's tactile encoder already understands how to use GelSight images - not much preprocessing required besides rotation
+*Tactile sensing models*: The recommendation is to use a pre-trained tactile decoder from [Sparsh](https://github.com/facebookresearch/sparsh.git) followed by a MLP head. Sparsh's tactile encoder already understands how to use GelSight images. The only pre-processing required is image rotation, but this is handled later during training/evaluation
 
-The vision encoder vit_base_patch16_224 only operates on 224x224 image patches and I suspect maintaining aspect ratio is important. 
+*Vision sensing models*: The vision encoder [vit_base_patch16_224](https://huggingface.co/timm/vit_base_patch16_224.augreg_in21k) only operates on 224x224 image patches and I suspect maintaining aspect ratio & image detail is important for performance. We will need to preprocess image so they are more square-ish with the relevant object clearly present in there
 
-TODO: explain preprocessing steps and include a sample training script following a similar pattern as used later for other scripts in this document
+## Step 1: Preprocessing
+The preprocessing stage has three jobs:
+
+1. Convert the Feeling of Success H5 archive into one folder per grasp sample. Each sample folder contains RGB frames, GelSight frames, and `metadata.json`. The conversion script also writes `manifest.csv`, which is the source table used by later split and analysis steps.
+2. Add an RGB motion-difference crop to each sample's metadata. This uses only the `before` and `during` RGB frames, finds the strongest pre-outcome motion region, and stores a full-height square crop box in `metadata.json` under `rgb_motion_diff`. This keeps the vision input close to 224x224 while preserving aspect ratio.
+3. Build the normal `train.csv`, `eval.csv`, and `test.csv` split files. Visually challenging objects do not get separate training splits; the split script tags those samples inside the normal split files using `object_class`.
+
+Some examples of motion-based crop bounding-boxes. the green square is the final image that will be fed to the vision-based detectors.
+
+![motion-crop-1](doc_assets/015_000167_plastic_watering_can_motion_diff.jpg)
+![motion-crop2](doc_assets/018_000244_mentos_gum_can_motion_diff.jpg)
+![motion-crop3](doc_assets/035_000178_aspirin_motion_diff.jpg)
+
+```bash
+# ideally run this from inside the repo's top-level directory
+conda activate monty-tactile
+
+REPO=`pwd`  # replace with actual repo location
+DATASET=$REPO/datasets/feeling-of-success  # replace with intended location of pre-processed dataset
+RAW_DATASET=~/Downloads/fos-unprocessed
+
+unzip ~/Downloads/h5.zip -d ~/Downloads/fos-unprocessed
+
+# Full preprocessing run.
+python3 $REPO/scripts/convert_h5_to_png_samples.py \
+  --dataset-dir $RAW_DATASET \
+  --output-dir $DATASET
+python3 $REPO/scripts/add_rgb_motion_diff_metadata.py --dataset-root $DATASET
+
+# Generate the deterministic split CSVs
+# IMPORTANT: seed 40 is chosen over default seed 42 for better distribution of train/test/eval samples
+python3 $REPO/scripts/generate_feeling_success_splits.py \
+  --manifest-csv $DATASET/manifest.csv \
+  --visually-difficult-csv $REPO/possibly-visually-difficult.csv \
+  --output-dir $DATASET \
+  --seed 40
+```
+
+This writes:
+
+```text
+feeling-of-success/train.csv
+feeling-of-success/eval.csv
+feeling-of-success/test.csv
+```
+
+The split script also prints how many samples, objects, and visually challenging samples/objects landed in each normal split. That subset is used later for parallel reporting in `results_analysis.ipynb`; it is not a separate model-training dataset. The notebook at `scripts/feeling_success_split_analysis.ipynb` can still be used for exploratory inspection, but the script is the reproducible generation path.
 
 ## Detector setup
 
@@ -68,15 +114,18 @@ The fusion MLP head is:
 
 This keeps the comparison fair: fusion receives both modalities, but it does not use extra labels, post-outcome frames, or a different pretraining source from the single-modality baselines.
 
-## Training
+## Step 2: Training
 
 ```bash
 # ideally run this from inside the repo's top-level directory
 conda activate monty-tactile
 
 REPO=`pwd`  # replace with actual repo location
-DATASET=datasets/feeling-of-success.  # replace with actual location of pre-processed dataset
+DATASET=datasets/feeling-of-success  # replace with actual location of pre-processed dataset
 PROGRESS=progress  # replace with intended location for checkpoints and progress results
+
+# download pre-trained sparsh weights
+hf download facebook/sparsh-dino-base dino_vitbase.safetensors --local-dir $REPO/checkpoints/sparsh-dino-base
 
 python $REPO/tactile-detector.py \
   --train $DATASET/train.csv \
@@ -136,7 +185,7 @@ python3 $REPO/joint-detector.py \
   --checkpoint-every-steps 100
 ```
 
-## Evaluation
+## Step 3: Evaluation
 
 ```bash
 # ideally run this from inside the repo's top-level directory
@@ -146,6 +195,11 @@ REPO=`pwd`  # replace with actual repo location
 DATASET=datasets/feeling-of-success.  # replace with actual location of pre-processed dataset
 PROGRESS=progress  # replace with intended location for checkpoints and training products
 REPORTS=reports  # replace with intended location for final results and reports
+
+# TODO: add logic to check if the weights are already present in $REPO/checkpoints/sparsh-dino-base otherwise run the following to download them first
+## download pre-trained sparsh weights
+# hf download facebook/sparsh-dino-base dino_vitbase.safetensors --local-dir $REPO/checkpoints/sparsh-dino-base
+
 
 python $REPO/tactile-detector.py \
   --eval $DATASET/test.csv \
