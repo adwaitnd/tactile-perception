@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This code is owned by Adwait Dongare and may not be used for any purposes unless explicitly allowed.
 """Wire the limited Feeling-of-Success tactile split into Sparsh T4 grasp input.
 
 This script intentionally stops at data/model setup. It gives us:

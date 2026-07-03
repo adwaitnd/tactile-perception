@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This code is owned by Adwait Dongare and may not be used for any purposes unless explicitly allowed.
 """Generate deterministic Feeling of Success train/eval/test split CSVs."""
 
 from __future__ import annotations

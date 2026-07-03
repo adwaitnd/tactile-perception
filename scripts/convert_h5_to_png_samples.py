@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This code is owned by Adwait Dongare and may not be used for any purposes unless explicitly allowed.
 """Convert Feeling of Success H5 samples into PNG files plus a manifest."""
 
 from __future__ import annotations

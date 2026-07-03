@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This code is owned by Adwait Dongare and may not be used for any purposes unless explicitly allowed.
 """Joint vision+tactile grasp outcome detector.
 
 This combines the frozen tactile Sparsh encoder and frozen timm ViT vision

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This code is owned by Adwait Dongare and may not be used for any purposes unless explicitly allowed.
 """Add deterministic RGB before/during motion-diff boxes to sample metadata.
 
 The Feeling-of-Success RGB view is wide and the robot/object interaction tends

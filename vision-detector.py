@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# This code is owned by Adwait Dongare and may not be used for any purposes unless explicitly allowed.
 """Vision-only grasp outcome detector over during/before RGB images.
 
 The detector uses timm's vit_base_patch16_224 as a frozen RGB encoder by
